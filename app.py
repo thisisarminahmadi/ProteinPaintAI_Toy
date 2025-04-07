@@ -4,10 +4,15 @@ from openai import OpenAI
 import json
 import requests
 import logging
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 app = Flask(__name__)
 CORS(app)
@@ -18,8 +23,6 @@ def ask():
 
     if not user_input:
         return jsonify({"error": "Missing question"}), 400
- 
- # Ask GPT to interpret the User input
 
     system_prompt = """
     You are PaintBot, a helpful assistant that creates links to ProteinPaint visualizations and provides expert biomedical summaries.
@@ -62,10 +65,13 @@ def ask():
         reply_text = response.choices[0].message.content
         reply_json = json.loads(reply_text)
 
-        # ClinVar data
+        # Enrich with ClinVar data
         gene_symbol = reply_json.get("gene", "")
         clinvar_info = fetch_clinvar_summary(gene_symbol)
-        logging.debug("Fetched ClinVar info: %s", clinvar_info
+        logging.debug("Fetched ClinVar info: %s", clinvar_info)
+
+        # Always set clinvar_summary—even if GPT already returned one—to ensure consistency.
+        # If clinvar_info is empty, keep GPT's output (or an empty string if not provided)
         reply_json["clinvar_summary"] = clinvar_info if clinvar_info and clinvar_info.strip() else reply_json.get("clinvar_summary", "")
 
         if clinvar_info and clinvar_info.strip():
