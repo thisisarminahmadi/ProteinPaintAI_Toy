@@ -20,12 +20,38 @@ CORS(app)
 @app.route("/ask", methods=["POST"])
 def ask():
     user_input = request.json.get("question")
-
     if not user_input:
         return jsonify({"error": "Missing question"}), 400
 
+    # Preliminary filter prompt to check if input is relevant.
+    filter_prompt = """
+    You are a query filter for ProteinPaintAI. Only allow questions that are about a gene (e.g., TP53) or a cancer type.
+    If the user question is about these topics, respond with the word "OK".
+    If the question is not related to genes or cancer types, respond with a JSON object:
+    {"error": "This query is not relevant. Please ask a question about a gene or cancer type."}
+    Do not provide any additional text.
+    """
+
+    filter_response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": filter_prompt},
+            {"role": "user", "content": user_input}
+        ]
+    )
+    filter_reply = filter_response.choices[0].message.content.strip()
+
+    # If the filter reply is a JSON error message, return it immediately.
+    if filter_reply.startswith("{") and '"error"' in filter_reply:
+        try:
+            error_obj = json.loads(filter_reply)
+            return jsonify(error_obj)
+        except json.JSONDecodeError:
+            return jsonify({"error": "Query not relevant."}), 400
+
+    # Otherwise, if filter approves the query, continue with the main system prompt.
     system_prompt = """
-    You are PaintBot, a helpful assistant that creates links to ProteinPaint visualizations and provides expert biomedical summaries.
+    You are ProteinPaintAI, a helpful assistant that creates links to ProteinPaint visualizations and provides expert biomedical summaries.
 
     Given a user's question about a gene or cancer type, respond with a JSON object containing:
 
@@ -71,7 +97,6 @@ def ask():
         logging.debug("Fetched ClinVar info: %s", clinvar_info)
 
         # Always set clinvar_summary—even if GPT already returned one—to ensure consistency.
-        # If clinvar_info is empty, keep GPT's output (or an empty string if not provided)
         reply_json["clinvar_summary"] = clinvar_info if clinvar_info and clinvar_info.strip() else reply_json.get("clinvar_summary", "")
 
         if clinvar_info and clinvar_info.strip():
@@ -109,7 +134,6 @@ def ask():
             "details": str(e),
             "raw": response.choices[0].message.content if 'response' in locals() else None
         }), 500
-
 
 def fetch_clinvar_summary(gene_symbol):
     try:
@@ -160,7 +184,6 @@ def fetch_clinvar_summary(gene_symbol):
     except Exception as e:
         logging.exception("ClinVar fetch error")
         return None
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
