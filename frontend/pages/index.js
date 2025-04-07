@@ -10,7 +10,7 @@ export default function Home() {
     setResponse(null);
 
     try {
-      const res = await fetch('http://localhost:5000/ask', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
